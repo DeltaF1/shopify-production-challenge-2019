@@ -1,0 +1,62 @@
+products
+-----------
+id|title|price|inventory
+
+carts
+-----------
+id|cookie
+
+cart_contents
+-----------
+cart_id|product_id|quantity
+
+
+
+---------------------------------
+API
+---------------------------------
+
+GET /product/<id>
+
+return {
+	title,
+	price,
+	inventory
+}
+
+GET /products/
+
+return [
+	{
+		title,
+		price,
+		inventory
+	},
+	...
+] for product in products where inventory > 0
+
+GET /cart/<id>?cookie=XXXX
+
+return {
+	contents : [
+		{
+			title,
+			quantity,
+			price : quantity * products.price,
+		}
+	],
+	total_price : sum(contents.price)
+} if cookie == carts.cookie
+
+POST /cart?cookie=XXXX
+
+return {
+	id
+}
+
+PUT /cart/<id>/<product_id>?cookie=XXXX
+body = {
+	quantity
+}
+
+return 
