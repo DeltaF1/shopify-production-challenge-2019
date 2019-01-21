@@ -1,3 +1,30 @@
+My design process went as follows:
+
+Come up with a database schema to store the required information:
+
+products
+-----------
+id|title|price|inventory
+
+carts
+-----------
+id|cookie
+
+cart_contents
+-----------
+cart_id|product_id|quantity
+
+I chose to include the "cookie" field so that I could add some basic
+session validation later on. I later codified these basic schemas in
+schema.sql. My next step was to read over the problem description and
+write out a description of the (mostly) RESTful API. I had some trouble
+determining which verbs to use for which transfers of state (particularly
+PUT vs PATCH). The following API was fleshed out, after which I made
+sure that it met the problem requirements, and began implementing. I
+chose to use web.py because I am most comfortable in Python, and it
+seemed to be the most straightforward option for building something
+barebones.
+
 ---------------------------------
 API
 ---------------------------------

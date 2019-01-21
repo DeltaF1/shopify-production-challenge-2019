@@ -60,6 +60,11 @@ class create_cart:
         return id
         
     def POST(self):
+        """
+        Create a new cart and return its id. This cart is tied
+        to the identity of the session cookie, and so only someone
+        using that cookie can view or modify the cart.
+        """
         # get the current session cookie, or generate a new one
         token = web.cookies().get("session_token")
         if not token:
@@ -90,6 +95,10 @@ def validate_session(function):
     
 class cart:
     def get_cart_contents(self, id):
+        """
+        Join the contents of a cart with the information from the
+        products table.
+        """
         data = db.query(
             'SELECT product_id as id, price, quantity, title FROM cart_contents JOIN products ON cart_contents.product_id=products.id WHERE cart_contents.cart_id = $id',
             vars = {'id':id}
@@ -97,6 +106,9 @@ class cart:
         return list(data)
             
     def set_cart_contents(self, id, product_id, quantity):
+        """
+        Add an amount of product to a cart.
+        """
         # If the product exists
         if db.select('products', where={'id':product_id}):
             if db.select('cart_contents', where={'cart_id':id, 'product_id':product_id}):
@@ -108,11 +120,17 @@ class cart:
             web.ctx.status = "422 Product Not Found"
             
     def check_ownership(self, id, cookie):
+        """
+        Return whether or not the requester is allowed to view this cart.
+        """
         data = db.select('carts', where={'id':id, 'cookie':cookie})
         return bool(data)
        
     @validate_session
     def GET(self, id):
+        """
+        Display the contents and total price of a cart.
+        """
         data = db.select('cart_contents', what='product_id as id, quantity', where={'cart_id':id})
         contents = self.get_cart_contents(id)
         cart = {
@@ -124,8 +142,20 @@ class cart:
         set_json_headers()
         return json.dumps(cart)
 
+    """
+    PUT and PATCH expect a JSON body of the following format:
+    {
+        "id":<product_id>,
+        "quantity":<amount>
+    }
+    """
+        
     @validate_session
     def PATCH(self, id):
+        """
+        Modify a cart's contents. If the specified product isn't
+        already in the cart this acts the same as a PUT request.
+        """
         body = json.loads(web.data())
         
         contents_row = db.select('cart_contents', what='quantity', where={'cart_id':id, 'product_id':body['id']})
@@ -138,15 +168,20 @@ class cart:
  
     @validate_session
     def PUT(self, id):
+        """
+        Set the cart to contain a specific amount of the product.
+        """
         body = json.loads(web.data())
         return self.set_cart_contents(id, body['id'], body['quantity'])
     
 class cart_complete(cart):
     @validate_session
     def POST(self, id):
+        """
+        Purchase all the items in a cart and remove their inventory from
+        the database.
+        """
         cart_contents = self.get_cart_contents(id)
-        
-        # check to make sure the cart is purchaseable
         
         # NOTE: In a distributed system this part would need to have a write lock on
         # the inventory table to prevent a race condition
