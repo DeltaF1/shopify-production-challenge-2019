@@ -22,24 +22,24 @@ def set_json_headers():
 class product:
     def GET(self, id):
         data = db.select('products', where={'id':id})
-        
-        set_json_headers()
-        return json.dumps(list(data))
-        
+        if data:
+            set_json_headers()
+            return json.dumps(list(data))
+        else:
+            web.ctx.status = "404 Product Not Found"
+            return None
         
 class products:
     def GET(self):
         query = web.input(only_in_stock="0")
         
+        # Adds a clause to only display in-stock items
         if query.only_in_stock == "1":
             data = db.select('products', where="inventory > 0")
         else:
             data = db.select('products')
         
-        products = []
-        
-        for product in data:
-            products.append(product)
+        products = list(data)
         
         set_json_headers()
         return json.dumps(products)
@@ -97,15 +97,19 @@ class cart:
         return list(data)
             
     def set_cart_contents(self, id, product_id, quantity):
-        if db.select('cart_contents', where={'cart_id':id, 'product_id':product_id}):
-            db.update('cart_contents', where={'cart_id':id, 'product_id':product_id}, quantity=quantity)
+        # If the product exists
+        if db.select('products', where={'id':product_id}):
+            if db.select('cart_contents', where={'cart_id':id, 'product_id':product_id}):
+                db.update('cart_contents', where={'cart_id':id, 'product_id':product_id}, quantity=quantity)
+            else:
+                db.insert('cart_contents', cart_id=id, product_id=product_id, quantity=quantity)
+            db.query("DELETE FROM cart_contents WHERE quantity <= 0")
         else:
-            db.insert('cart_contents', cart_id=id, product_id=product_id, quantity=quantity)
-        db.query("DELETE FROM cart_contents WHERE quantity <= 0")
-        
+            web.ctx.status = "422 Product Not Found"
+            
     def check_ownership(self, id, cookie):
         data = db.select('carts', where={'id':id, 'cookie':cookie})
-        return len(list(data)) > 0
+        return bool(data)
        
     @validate_session
     def GET(self, id):
@@ -125,15 +129,17 @@ class cart:
         body = json.loads(web.data())
         
         contents_row = db.select('cart_contents', what='quantity', where={'cart_id':id, 'product_id':body['id']})
-        prev_quantity = contents_row[0] if contents_row else 0
+        try:
+            prev_quantity = contents_row[0]['quantity']
+        except IndexError:
+            prev_quantity = 0
         
-        self.set_cart_contents(id, body['id'], prev_quantity+body['quantity']) 
-        return None
+        return self.set_cart_contents(id, body['id'], prev_quantity+body['quantity']) 
  
     @validate_session
     def PUT(self, id):
         body = json.loads(web.data())
-        self.set_cart_contents(id, body['id'], body['quantity'])
+        return self.set_cart_contents(id, body['id'], body['quantity'])
     
 class cart_complete(cart):
     @validate_session
