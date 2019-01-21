@@ -1,3 +1,5 @@
+PRAGMA foreign_keys = ON;
+
 CREATE TABLE IF NOT EXISTS products (
 	id INTEGER PRIMARY KEY,
 	title VARCHAR,

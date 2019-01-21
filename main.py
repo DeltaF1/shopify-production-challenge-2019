@@ -45,7 +45,7 @@ class products:
         return json.dumps(products)
 
 class create_cart:
-    def generate_cookie(self), n=6:
+    def generate_cookie(self, n=6):
         """
         Generate a random string to act as a session cookie.
         
@@ -53,29 +53,37 @@ class create_cart:
         A CRPYOTGRAPHICALLY STRONG RANDOM NUMBER GENERATOR. THIS
         IS SOLELY A PROOF OF CONCEPT.
         """
-        return ''.join(random.choice(string.ascii_letters+string.digits, k=n))
+        return ''.join(random.choices(string.ascii_letters+string.digits, k=n))
 
     def create_cart(self, cookie):
         id = db.insert('carts', cookie=cookie)
         return id
         
     def POST(self):
-        # get the current session cookie, or 
-        cookie = web.cookies(session_token=generate_cookie())
-        web.setcookie("session_token", cookie, 600)
-        id = self.create_cart(cookie)
+        # get the current session cookie, or generate a new one
+        token = web.cookies().get("session_token")
+        if not token:
+            token = self.generate_cookie()
+        web.setcookie("session_token", token, 600)
+        id = self.create_cart(token)
         
         set_json_headers()
         return json.dumps({'id':id})
 
 
 def validate_session(function):
-    def validated_func(self, id):
-        cookie = web.cookies.get("session_token")
-        if self.check_ownership(id, cookie):
-            function(self, id)
+    """
+    A wrapper to validate the session cookie against the requested cart.
+    """
+    def validated_func(self, cart_id):
+        cookie = web.cookies().get("session_token")
+        if self.check_ownership(cart_id, cookie):
+            return function(self, cart_id)
         else:
-            web.ctx.status = '401 Unauthorized'
+            # If the current session is not authorized to view/modify
+            # the requested cart:
+            web.ctx.status = '404 Cart not found'
+            web.header('Content-Type', 'plain/text')
             return "POST /cart to create a new cart and receive a session cookie"
     
     return validated_func  
@@ -88,6 +96,13 @@ class cart:
         )
         return list(data)
             
+    def set_cart_contents(self, id, product_id, quantity):
+        if db.select('cart_contents', where={'cart_id':id, 'product_id':product_id}):
+            db.update('cart_contents', where={'cart_id':id, 'product_id':product_id}, quantity=quantity)
+        else:
+            db.insert('cart_contents', cart_id=id, product_id=product_id, quantity=quantity)
+        db.query("DELETE FROM cart_contents WHERE quantity <= 0")
+        
     def check_ownership(self, id, cookie):
         data = db.select('carts', where={'id':id, 'cookie':cookie})
         return len(list(data)) > 0
@@ -104,68 +119,55 @@ class cart:
         
         set_json_headers()
         return json.dumps(cart)
-    
-    def set_cart_contents(self, id, product_id, quantity):
-        try:
-            db.update('cart_contents', where={'cart_id':id, 'product_id':product_id}, quantity=quantity)
-        except:
-            db.insert('cart_contents', cart_id=id, product_id=product_id, quantity=quantity)
-        db.query("DELETE FROM cart_contents WHERE quantity <= 0")    
-    
-    
+
     @validate_session
     def PATCH(self, id):
         body = json.loads(web.data())
         
-        # if "id" not in body:
-        #     web.ctx.status = '400 Bad Request'
-        #     return "Body should be in the form of a json object with fields id and quantity."
+        contents_row = db.select('cart_contents', what='quantity', where={'cart_id':id, 'product_id':body['id']})
+        prev_quantity = contents_row[0] if contents_row else 0
         
-        try:
-            inventory = (
-                    db.select('cart_contents', what='quantity', where={'cart_id':id, 'product_id':body['id']})
-                )[0]['quantity']
-        except IndexError:
-            inventory = 0
-            
-        self.set_cart_contents(id, body['id'], inventory+body['quantity']) 
+        self.set_cart_contents(id, body['id'], prev_quantity+body['quantity']) 
         return None
  
-        
     @validate_session
     def PUT(self, id):
         body = json.loads(web.data())
         self.set_cart_contents(id, body['id'], body['quantity'])
     
 class cart_complete(cart):
+    @validate_session
     def POST(self, id):
-        cookie = "cookie"
-        if self.check_ownership(id, cookie):
-            cart_contents = self.get_cart_contents(id)
+        cart_contents = self.get_cart_contents(id)
+        
+        # check to make sure the cart is purchaseable
+        
+        # NOTE: In a distributed system this part would need to have a write lock on
+        # the inventory table to prevent a race condition
+        product_rows = []
+        failed_to_buy = []
+        for product in cart_contents:
+            product_row = db.select("products", what="id, inventory", where={'id':product["id"]})[0]
+            product_rows.append(product_row)
             
-            # check to make sure the cart is purchaseable
-            
-            # in a distributed system this part would need to have a write lock on
-            # the inventory table to prevent a race condition
-            product_rows = []
-            for product in cart_contents:
-                product_row = db.select("products", what="id, inventory", where={'id':product["id"]})[0]
-                product_rows.append(product_row)
-                
-                # Check to make sure that there is sufficient inventory to purchase the requested quantity
-                if product_row["inventory"] < product["quantity"]:
-                    web.ctx.status = '400 Insufficient inventory'
-                    return None
-            
-            # Decrease inventory
-            for i, product in enumerate(product_rows):
-                db.update("roducts", where={'id':product["id"]}, inventory=product["inventory"]-cart_contents[i]["quantity"])
-            
-            db.delete('carts', where={'id':id})
-            return None
-        else:
-            web.ctx.status = '401 Unauthorized'
-            return None
+            # Check to make sure that there is sufficient inventory to purchase the requested quantity
+            if product_row["inventory"] < product["quantity"]:
+                failed_to_buy.append({'id':product["id"],
+                'diff':product["quantity"] - product_row["inventory"]})
+        
+        if failed_to_buy:
+            web.ctx.status = "400 Insufficient Inventory"
+            set_json_headers()
+            return json.dumps(failed_to_buy)
+        
+        # Decrease inventory
+        for i, product in enumerate(product_rows):
+            db.update("products", where={'id':product["id"]}, inventory=product["inventory"]-cart_contents[i]["quantity"])
+        
+        cart = self.GET(id)
+        db.delete('carts', where={'id':id})
+        return cart
+
             
 if __name__ == '__main__':
     app = web.application(urls, globals(), autoreload=True)

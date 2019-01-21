@@ -1,22 +1,8 @@
-products
------------
-id|title|price|inventory
-
-carts
------------
-id|cookie
-
-cart_contents
------------
-cart_id|product_id|quantity
-
-
-
 ---------------------------------
 API
 ---------------------------------
 
--- Retrieve a single product
+-- Retrieve a single product.
 GET /product/<id>
 
 return {
@@ -25,8 +11,8 @@ return {
 	inventory
 }
 
--- Retrieve all products
-GET /products/?only_in_stock=1
+-- Retrieve all products.
+GET /products/?only_in_stock=<1|0>
 
 return [
 	{
@@ -37,29 +23,34 @@ return [
 	...
 ] for product in products where inventory > 0
 
--- Create a new empty cart
-POST /cart?cookie=XXXX
+-- Create a new empty cart.
+POST /cart
 
 return {
 	id
 }
 
--- Get the contents of a shopping cart
-GET /cart/<id>?cookie=XXXX
+Sets a session cookie if none is present
+
+-- ALL FOLLOWING REQUESTS REQUIRE A MATCHING SESSION COOKIE
+
+-- Get the contents of a shopping cart.
+GET /cart/<id>
 
 return {
 	contents : [
 		{
 			title,
 			quantity,
-			price : quantity * products.price,
+			price,
 		}
 	],
-	total_price : sum(contents.price)
-} if cookie == carts.cookie
+	total_price
+}
 
--- Put an item into the cart
-PATCH /cart/<id>?cookie=XXXX
+-- Put an item into the cart, or increase the quantity if that item is already
+-- in the cart.
+PATCH /cart/<id>
 body = {
 	id,
 	quantity
@@ -69,10 +60,26 @@ return {
 	success
 }
 
--- Purchase all items in the cart
--- If any of the items are unable to be purchased, the whole cart is rejected
+-- Put an item into the cart, or set the quantity for that item.
+-- Differs from PATCH since it can be used to for instance remove an item
+-- from the cart.
+--
+-- e.x. PUT /cart/<id> {id:xxx, quantity:0}
+PUT /cart/<id>
+body = {
+	id,
+	quantity
+}
 
-POST /cart/<id>/complete?cookie=XXXX
+return {
+	success
+}
+
+-- Purchase all items in the cart.
+-- If any of the items are unable to be purchased,
+-- the whole cart is rejected
+
+POST /cart/<id>/complete
 
 return {
 	success,
