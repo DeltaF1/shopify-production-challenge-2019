@@ -16,6 +16,7 @@ cart_id|product_id|quantity
 API
 ---------------------------------
 
+-- Retrieve a single product
 GET /product/<id>
 
 return {
@@ -24,7 +25,8 @@ return {
 	inventory
 }
 
-GET /products/
+-- Retrieve all products
+GET /products/?only_in_stock=1
 
 return [
 	{
@@ -35,6 +37,14 @@ return [
 	...
 ] for product in products where inventory > 0
 
+-- Create a new empty cart
+POST /cart?cookie=XXXX
+
+return {
+	id
+}
+
+-- Get the contents of a shopping cart
 GET /cart/<id>?cookie=XXXX
 
 return {
@@ -48,15 +58,29 @@ return {
 	total_price : sum(contents.price)
 } if cookie == carts.cookie
 
-POST /cart?cookie=XXXX
-
-return {
-	id
-}
-
-PUT /cart/<id>/<product_id>?cookie=XXXX
+-- Put an item into the cart
+PATCH /cart/<id>?cookie=XXXX
 body = {
+	id,
 	quantity
 }
 
-return 
+return {
+	success
+}
+
+-- Purchase all items in the cart
+-- If any of the items are unable to be purchased, the whole cart is rejected
+
+POST /cart/<id>/complete?cookie=XXXX
+
+return {
+	success,
+	(optional)failed_products : [
+		{
+			title,
+			diff_quantity
+		}
+	]
+}
+
